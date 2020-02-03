@@ -1,11 +1,8 @@
 "use strict";
 /**
- * deepjson client for node / javascript
- * (c)2019 cn.sntrk 
- */
-var http = require('http');
-var StringDecoder = require('string_decoder').StringDecoder;
+ 
 
+*/
 
 (function(exports) {
 
@@ -19,6 +16,7 @@ exports.get = get;
 exports.post = post;
 exports.put = put;
 exports.delete = dj_delete;
+exports.append = append;
 
 /**
  * admin exports
@@ -26,6 +24,7 @@ exports.delete = dj_delete;
 exports.keys = keys;
 exports.metadata = metadata;
 exports.location = location;
+exports.time = get_system_time;
 
 /**
  * getters and setters
@@ -49,34 +48,42 @@ var _secret = "djonair";
 var _user = "can";
 var _password = "can";
 
-
 function isBrowser() {
 	return (typeof window !== 'undefined');
 }
 
 function isNode() {
-	return (typeof global !== 'undefined');
+	return (typeof process === 'object');
 }
 
+var http = undefined; 
+var StringDecoder = undefined;
+if( isNode() ) {
+    http = require('http');
+    StringDecoder = require('string_decoder').StringDecoder;
+}
 
 function authentication_code( url ) {
 	if( url.startsWith( _base_url ) ) 	url = url.substring( _base_url.length );
 	if( !url.startsWith("/") ) 			url = "/" + url;
-        if( url.endsWith("?") ) url = url.substr( 0, url.length -1 );
-
+    if( url.endsWith("?") ) url = url.substr( 0, url.length -1 );
+    
 	var authentication_string = _secret + "-" + _user + "-" + _password + "-" + url;
 	var authentication_hash = "";
 	if( isBrowser() ) {
 
-            authentication_hash = Sha256.hash( authentication_string, {} );
+		authentication_hash = Sha256.hash( authentication_string, {} );
 
+	} else if( isNode() ) {
+                var crypto = require('crypto');
+
+                authentication_hash = crypto.createHash('sha256').update(authentication_string).digest('hex');
 	} else {
-            /**
-             * get it from the external file
-             */
-            
-            authentication_hash = Sha256.hash( authentication_string, {} );
-	}
+                /**
+		 * not implemented yet
+		 */
+                throw "not implemented yet!" 
+        }
 	return _user + ";" + authentication_hash;
 }
 
@@ -105,34 +112,17 @@ function location( key, callback ) {
 	_admin_call( "location", key, callback );
 }
 
+function get_system_time( callback ) {
+	_admin_call( "time", undefined, callback );
+}
+
 function _admin_call( call, parameters, callback ) {
-	var url = _base_url + "cmd/" + call + "?" + encodeURI( parameters );
-	var signature = authentication_code( url );
+	var url = _base_url + "cmd/" + call;
+	if( parameters !== undefined ) {
+		url += "?" + encodeURI( parameters );	
+	}
 
-	$.ajax( {
-        	url: url,
-        	contentType: 'application/json',
-        	dataType: 'text',
-
-        	beforeSend: function(request) {
-										    request.setRequestHeader("authenticate", signature);
-										  },
-
-	        success: function(response) {
-
-				/**
-				 * no error, so successfull
-				 */
-				callback( "ok", response );
-
-	        },
-	        error: function( response ) {
-	        	/**
-	        	 * error, alert!
-	        	 */
-	        	 callback( "error", response );
-	        }
-	    });
+	http_call( url, "GET", undefined, callback );
 }
 
 
@@ -146,178 +136,115 @@ function _admin_call( call, parameters, callback ) {
  *      __/ |        |/  | |                 |/  | |             |/                             
  *     |___/             |_|                     |_|                                            
 */
+
+function http_call( url, method, data, callback ) {
+    if( isBrowser() ) {
+        http_call_browser( url, method, data, callback );
+    } else if( isNode() ) {
+        http_call_node( url, method, data, callback ) ;
+    } else {
+        throw "undefined engine to call http";
+    }
+}
+
+function http_call_browser(url, method, data, callback) {
+    var signature = authentication_code( url );
+    var ajax_options = {
+                            url: url,
+                            type: method,
+                            contentType: 'application/json',
+                            contentType: false,
+                            processData: false,
+                            dataType: 'text',
+
+                            beforeSend: function(request) {
+                                        request.setRequestHeader("authenticate", signature);
+                                      },
+
+                            success: function(response) {
+                                    callback( "ok", true );
+
+                            },
+                            error: function( response ) {
+                                    callback( "error", false );
+                            }
+                    };
+    if( data !== undefined && ["PUT","POST","APPEND"].indexof( method ) > -1 ) {
+        ajax_options.data = data;
+    }
+    $.ajax( ajax_options );
+}
+
+function http_call_node(url, method, data, callback) {
+    var signature = authentication_code( url );
+    var http_options = { hostname: _host, 
+                        port: _port, 
+                        method: method,
+                        path: url,
+                        headers: {  'authenticate': signature,
+                                    'Content-Type': 'application/json'},
+                        timeout: 60000
+                        
+                    };
+
+    var req = http.request( http_options, function( response ) {
+        var bodyChunks = [];
+        var response_http_code = response.statusCode;
+
+        response.on( "data", function( chunk ) {
+            bodyChunks.push( chunk );
+        });
+        response.on( "end", function() {
+            var body = Buffer.concat(bodyChunks);
+            var decoder = new StringDecoder('utf8');
+            var json_data = decoder.write(body);
+
+            if( response_http_code === 200 ) {
+                callback( "ok", JSON.parse( json_data ) );
+            } else {
+                var error_msg = undefined;
+                try {
+                    error_msg = JSON.parse( json_data );
+                } catch( e ) {
+                    error_msg = json_data;
+                };
+                callback( "error", error_msg );
+            }
+        });
+    });
+
+    req.on('socket', function (socket) {
+        socket.setTimeout(http_options.timeout);  
+        socket.on('timeout', function() {
+            req.abort();
+        });
+    });
+
+    req.on( "error", function( e ) {
+        callback( "error", e );
+    });
+
+    /**
+     * if there is data to send, ... fire it :)
+     */
+    if( data!==undefined ) {
+        req.write( data );
+    }
+
+    req.end();
+}
 function exist( key, callback ) {
 
 	var url = _base_url + "js/" + key + "?" + encodeURI( ". | length" );
-        var path = "/js/" + key + "?" + encodeURI( ". | length" );
-	var signature = authentication_code( url );
-        
-        var options = { hostname: _host, 
-                        port: _port, 
-                        method: "GET",
-                        path: path,
-                        header: { 'authenticate': signature }
-                    };
-        var rv = false;
-                   
-        var req = http.request( options, function( response ) {
-            response.on( "end", function(chunk) {
-                                callback( true );
-                            });
-            });
-        req.on( "error", function(e) {
-                callback( false );
-            });
-
-}
-
-function put( key, value, callback ) {
-    _post( key, value, {put: true}, callback );
-}
-function post( key,value, callback ) {
-    _post( key, value, {put: false}, callback );
-}
-
-function _post( key, value, options, callback ) {
-
-	if( value === undefined ) {
-
-	} else if( typeof value === "string" ) {
-		value = value;
-	} else if( typeof value === "object" ) {
-		value = JSON.stringify( value );
-	} else {
-		/**
-		 * nothing
-		 */
-
-	}
-        
-        var path = "/js/" + key;
-	var signature = authentication_code( path );
-        
-        var http_options = { hostname: _host, 
-                        port: _port, 
-                        method: "POST",
-                        path: path,
-                        headers: {  'authenticate': signature,
-                                    'Content-Type': 'application/json'},
-                        timeout: 60000
-                    };
-        
-        /**
-         * if it is a put, then just change the name!
-         */
-        if( options !== undefined &&
-            options.put === true ) {
-            http_options.method = "PUT";
-        }
-                    
-        var req = http.request( http_options, function( response ) {
-            var bodyChunks = [];
-            
-            response.on( "data", function( chunk ) {
-                bodyChunks.push( chunk );
-            });
-            response.on( "end", function() {
-                var body = Buffer.concat(bodyChunks);
-                var decoder = new StringDecoder('utf8');
-                var json_data = decoder.write(body);
-                callback( "ok", JSON.parse( json_data ) );
-            });
-        });
-        
-        req.on('socket', function (socket) {
-            socket.setTimeout(http_options.timeout);  
-            socket.on('timeout', function() {
-                req.abort();
-            });
-        });
-        
-        req.on( "error", function( e ) {
-            callback( "error", e );
-        });
-        
-        req.write( value );
-        
-        req.end();
-        
-}
-
-function get( key, value, callback ) {
-
-	if( value === undefined ) {
-
-	} else if( typeof value === "string" ) {
-		value = value;
-	} else if( typeof value === "object" ) {
-		value = JSON.stringify( value );
-	} else {
-		/**
-		 * nothing
-		 */
-
-	}
-
-        var path = "/js/" + key + "?" + encodeURIComponent(value);
-	var signature = authentication_code( path );
-        var response_http_code = 0;
-        
-        var http_options = { hostname: _host, 
-                        port: _port, 
-                        method: "GET",
-                        path: path,
-                        headers: {  'authenticate': signature,
-                                    'Content-Type': 'application/json'},
-                        timeout: 60000
-                    };
-                    
-	
-        var req = http.request( http_options, function( response ) {
-            var bodyChunks = [];
-            response_http_code = response.statusCode;
-            
-            response.on( "data", function( chunk ) {
-                bodyChunks.push( chunk );
-            });
-            response.on( "end", function() {
-                var body = Buffer.concat(bodyChunks);
-                var decoder = new StringDecoder('utf8');
-                var json_data = decoder.write(body);
-                
-                if( response_http_code === 200 ) {
-                    callback( "ok", JSON.parse( json_data ) );
-                } else {
-                    callback( "error", JSON.parse( json_data ) );
-                }
-            });
-        });
-        
-        req.on('socket', function (socket) {
-            socket.setTimeout(http_options.timeout);  
-            socket.on('timeout', function() {
-                req.abort();
-            });
-        });
-        
-        req.on( "error", function( e ) {
-            callback( "error", e );
-        });
-        
-        req.end();
-
-}
-
-function dj_delete( key, callback ) {
-	var url = _base_url + "js/" + key;
 	var signature = authentication_code( url );
 
 	$.ajax( {
     			url: url,
-    			type: 'delete',
-	        	contentType: 'application/json',
-    			contentType: false,
+    			type: 'get',
+		      	contentType: 'application/json',
+				contentType: false,
     			processData: false,
+
     			beforeSend: function(request) {
 											    request.setRequestHeader("authenticate", signature);
 											  },
@@ -325,20 +252,122 @@ function dj_delete( key, callback ) {
 				dataType: 'text',
 
     			success: function(response) {
-
-    				/**
-    				 * no error, so successfull
-    				 */
-    				callback( "ok", response );
+    				callback( true );
 
 		        },
 		        error: function( response ) {
-		        	/**
-		        	 * error, alert!
-		        	 */
-		        	 callback( "error", response );
+		        	callback( false );
 		        }
     		} );
+}
+
+function post( key, command, value, callback ) {
+
+	if( value === undefined ) {
+
+	} else if( typeof value === "string" ) {
+		value = value;
+	} else if( typeof value === "object" ) {
+		value = JSON.stringify( value );
+	} else {
+		/**
+		 * nothing
+		 */
+
+	}
+        
+
+	var url = _base_url + "js/" + key;
+        if( command !== undefined && command.length > 0 ) {
+            url += "?" + encodeURIComponent( command );
+        }
+
+        http_call( url, "POST", value, callback );
+
+}
+
+function put( key, command, value, callback ) {
+
+	if( value === undefined ) {
+
+	} else if( typeof value === "string" ) {
+		value = value;
+	} else if( typeof value === "object" ) {
+		value = JSON.stringify( value );
+	} else {
+		/**
+		 * nothing
+		 */
+
+	}
+
+	var url = _base_url + "js/" + key;
+	/**
+	 * if there is a command, then place it here !
+         */
+        if( command !== undefined && command.length > 0 ) {
+            url += "?" + encodeURIComponent( command );
+        }
+
+        http_call( url, "PUT", value, callback );
+
+
+}
+
+function append( key, command, value, callback ) {
+
+    if( value === undefined ) {
+
+    } else if( typeof value === "string" ) {
+            value = value;
+    } else if( typeof value === "object" ) {
+            value = JSON.stringify( value );
+    } else {
+            /**
+             * nothing
+             */
+
+    }
+
+    var url = _base_url + "js/" + key;
+    /**
+     * if there is a command, then place it here !
+     */
+    if( command !== undefined && command.length > 0 ) {
+    	url += "?" + encodeURIComponent( command );
+    }
+
+    http_call( url, "APPEND", value, callback );
+}
+
+function get( key, command, callback ) {
+
+	if( command === undefined || command === null) {
+		command = "";
+	} else if( typeof command === "string" ) {
+		command = command;
+	} else if( typeof value === "object" ) {
+		command = JSON.stringify( command );
+	} else {
+		/**
+		 * nothing
+		 */
+	}
+
+	var url = _base_url + "js/" + key;
+	if( command!==undefined && command!=="" ) {
+		url += "?" + encodeURIComponent(command);
+	}
+
+        http_call( url, "GET", undefined, callback );
+
+}
+
+function dj_delete( key, callback ) {
+	var url = _base_url + "js/" + key;
+
+        http_call( url, "DELETE", undefined, callback );
+
 }
 
 
@@ -372,8 +401,8 @@ function setSettings( options ) {
     setBaseUrl();
 }
 
-
 })(typeof exports === 'undefined'? this['dj']={}: exports);
+
 
 class Sha256 {
 
