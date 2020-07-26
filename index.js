@@ -18,6 +18,8 @@ exports.put = put;
 exports.delete = dj_delete;
 exports.append = append;
 
+exports.sha256 = _intern_hash256;
+
 /**
  * admin exports
  */
@@ -39,6 +41,8 @@ exports.setUser = setUser;
 exports.getUser = getUser;
 exports.setPassword = setPassword;
 exports.getPassword = getPassword;
+exports.getHttps = getHttps;
+exports.setHttps = setHttps;
 exports.setSettings = setSettings;
 
 var _base_url = "http://localhost:7273/";
@@ -47,6 +51,7 @@ var _port = "7273";
 var _secret = "djonair";
 var _user = "can";
 var _password = "can";
+var _https = false;
 
 function isBrowser() {
 	return (typeof window !== 'undefined');
@@ -56,11 +61,27 @@ function isNode() {
 	return (typeof process === 'object');
 }
 
-var http = undefined; 
+var http = undefined;
+var https = undefined;
+var crypto = undefined;
 var StringDecoder = undefined;
 if( isNode() ) {
     http = require('http');
+    https = require('https');
+    crypto = require('crypto');
     StringDecoder = require('string_decoder').StringDecoder;
+}
+
+function _intern_hash256( string ) {
+    var rv = undefined;
+    if( isNode() ) {
+        rv = crypto.createHash('sha256').update(string).digest('hex');
+    } else if( isBrowser() ) {
+        rv = Sha256.hash( string, {} );
+    } else {
+        throw "sha256 for 'not browser' and 'not node' not implemented yet!";
+    }
+    return rv;
 }
 
 function authentication_code( url ) {
@@ -69,21 +90,8 @@ function authentication_code( url ) {
     if( url.endsWith("?") ) url = url.substr( 0, url.length -1 );
     
 	var authentication_string = _secret + "-" + _user + "-" + _password + "-" + url;
-	var authentication_hash = "";
-	if( isBrowser() ) {
-
-		authentication_hash = Sha256.hash( authentication_string, {} );
-
-	} else if( isNode() ) {
-                var crypto = require('crypto');
-
-                authentication_hash = crypto.createHash('sha256').update(authentication_string).digest('hex');
-	} else {
-                /**
-		 * not implemented yet
-		 */
-                throw "not implemented yet!" 
-        }
+	var authentication_hash = _intern_hash256(authentication_string);
+	
 	return _user + ";" + authentication_hash;
 }
 
@@ -117,7 +125,7 @@ function get_system_time( callback ) {
 }
 
 function _admin_call( call, parameters, callback ) {
-	var url = _base_url + "cmd/" + call;
+	var url = "/cmd/" + call;
 	if( parameters !== undefined ) {
 		url += "?" + encodeURI( parameters );	
 	}
@@ -150,7 +158,7 @@ function http_call( url, method, data, callback ) {
 function http_call_browser(url, method, data, callback) {
     var signature = authentication_code( url );
     var ajax_options = {
-                            url: url,
+                            url: _base_url + url,
                             type: method,
                             contentType: 'application/json',
                             contentType: false,
@@ -186,8 +194,13 @@ function http_call_node(url, method, data, callback) {
                         timeout: 60000
                         
                     };
-
-    var req = http.request( http_options, function( response ) {
+    var protocol = undefined;
+    if( _https ) {
+        protocol = https;
+    } else {
+        protocol = http;
+    }
+    var req = protocol.request( http_options, function( response ) {
         var bodyChunks = [];
         var response_http_code = response.statusCode;
 
@@ -235,11 +248,11 @@ function http_call_node(url, method, data, callback) {
 }
 function exist( key, callback ) {
 
-	var url = _base_url + "js/" + key + "?" + encodeURI( ". | length" );
+	var url = "/js/" + key + "?" + encodeURI( ". | length" );
 	var signature = authentication_code( url );
 
 	$.ajax( {
-    			url: url,
+    			url: _base_url + url,
     			type: 'get',
 		      	contentType: 'application/json',
 				contentType: false,
@@ -277,7 +290,7 @@ function post( key, command, value, callback ) {
 	}
         
 
-	var url = _base_url + "js/" + key;
+	var url = "/js/" + key;
         if( command !== undefined && command.length > 0 ) {
             url += "?" + encodeURIComponent( command );
         }
@@ -301,7 +314,7 @@ function put( key, command, value, callback ) {
 
 	}
 
-	var url = _base_url + "js/" + key;
+	var url = "/js/" + key;
 	/**
 	 * if there is a command, then place it here !
          */
@@ -329,7 +342,7 @@ function append( key, command, value, callback ) {
 
     }
 
-    var url = _base_url + "js/" + key;
+    var url = "/js/" + key;
     /**
      * if there is a command, then place it here !
      */
@@ -354,7 +367,7 @@ function get( key, command, callback ) {
 		 */
 	}
 
-	var url = _base_url + "js/" + key;
+	var url = "/js/" + key;
 	if( command!==undefined && command!=="" ) {
 		url += "?" + encodeURIComponent(command);
 	}
@@ -363,10 +376,21 @@ function get( key, command, callback ) {
 
 }
 
-function dj_delete( key, callback ) {
-	var url = _base_url + "js/" + key;
+function dj_delete( key, command, callback ) {
+    if( command === undefined || command === null) {
+		command = "";
+	} else if( typeof command === "string" ) {
+		command = command;
+	} else if( typeof value === "object" ) {
+		command = JSON.stringify( command );
+	} else {
+		/**
+		 * nothing
+		 */
+	}
+	var url = "/js/" + key;
 
-        http_call( url, "DELETE", undefined, callback );
+        http_call( url, "DELETE", command, callback );
 
 }
 
@@ -386,11 +410,13 @@ function setPort(value) { _port = value; setBaseUrl();};
 function setSecret(value) { _secret = value; };
 function setUser(value) { _user = value; };
 function setPassword(value) { _password = value; };
+function setHttps(value) { _https = value; }; // boolean
 function getHost() { return _host; };
 function getPort() { return _port; };
 function getSecret() { return _secret; };
 function getUser() { return _user; };
 function getPassword() { return _password; };
+function getHttps() { return _https; };
 function setBaseUrl() { _base_url = "http://" + _host + ":" + _port + "/"; };
 function setSettings( options ) {
     if( options.host !== undefined ) _host = options.host;
