@@ -17,6 +17,8 @@ exports.post = post;
 exports.put = put;
 exports.delete = dj_delete;
 exports.append = append;
+exports.merge = merge;
+
 
 exports.sha256 = _intern_hash256;
 
@@ -158,15 +160,18 @@ function http_call( url, method, data, callback ) {
 function http_call_browser(url, method, data, callback) {
     var signature = authentication_code( url );
     var ajax_options = {
-                            url: _base_url + url,
-                            type: method,
+							url: _base_url + url,
+
+							// merge and append should go with 'dj-override-method'
+                            type: method === "APPEND" || method === "MERGE" ? "PUT" : method,
                             contentType: 'application/json',
                             contentType: false,
                             processData: false,
                             dataType: 'text',
 
                             beforeSend: function(request) {
-                                        request.setRequestHeader("authenticate", signature);
+										request.setRequestHeader("authenticate", signature);
+										request.setRequestHeader('dj-override-method',method);
                                       },
 
                             success: function(response) {
@@ -176,15 +181,16 @@ function http_call_browser(url, method, data, callback) {
                             error: function( response ) {
                                     callback( "error", false );
                             }
-                    };
-    if( data !== undefined && ["PUT","POST","APPEND"].indexof( method ) > -1 ) {
+					};
+
+    if( data !== undefined && ["PUT","POST","APPEND","MERGE"].indexof( method ) > -1 ) {
         ajax_options.data = data;
     }
     $.ajax( ajax_options );
 }
 
 function http_call_node(url, method, data, callback) {
-    var signature = authentication_code( url );
+	var signature = authentication_code( url );
     var http_options = { hostname: _host, 
                         port: _port, 
                         method: method,
@@ -193,7 +199,14 @@ function http_call_node(url, method, data, callback) {
                                     'Content-Type': 'application/json'},
                         timeout: 60000
                         
-                    };
+					};
+
+	// merge and append should go with 'dj-override-method'
+	if( method === "APPEND" || method === "MERGE" ) {
+		http_options.method = "POST";
+		http_options.headers['dj-override-method'] = method;
+	}
+
     var protocol = undefined;
     if( _https ) {
         protocol = https;
@@ -351,6 +364,32 @@ function append( key, command, value, callback ) {
     }
 
     http_call( url, "APPEND", value, callback );
+}
+
+function merge( key, command, value, callback ) {
+
+    if( value === undefined ) {
+
+    } else if( typeof value === "string" ) {
+            value = value;
+    } else if( typeof value === "object" ) {
+            value = JSON.stringify( value );
+    } else {
+            /**
+             * nothing
+             */
+
+    }
+
+    var url = "/js/" + key;
+    /**
+     * if there is a command, then place it here !
+     */
+    if( command !== undefined && command.length > 0 ) {
+    	url += "?" + encodeURIComponent( command );
+    }
+
+    http_call( url, "MERGE", value, callback );
 }
 
 function get( key, command, callback ) {
