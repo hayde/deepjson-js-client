@@ -29,6 +29,8 @@ exports.keys = keys;
 exports.metadata = metadata;
 exports.location = location;
 exports.time = get_system_time;
+exports.uuid = get_uuid; 
+exports.guid = get_guid; 
 
 /**
  * getters and setters
@@ -124,6 +126,14 @@ function location( key, callback ) {
 
 function get_system_time( callback ) {
 	_admin_call( "time", undefined, callback );
+}
+
+function get_uuid( callback ) {
+	_admin_call( "uuid", undefined, callback );
+}
+
+function get_guid( callback ) {
+	_admin_call( "guid", undefined, callback );
 }
 
 function _admin_call( call, parameters, callback ) {
