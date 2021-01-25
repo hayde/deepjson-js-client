@@ -1,6 +1,6 @@
 {
   "name": "deepjson-js-client",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "deepjson client for node",
   "main": "index.js",
   "scripts": {
