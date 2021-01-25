@@ -31,6 +31,7 @@ exports.location = location;
 exports.time = get_system_time;
 exports.uuid = get_uuid; 
 exports.guid = get_guid; 
+exports.user = get_user; 
 
 /**
  * getters and setters
@@ -134,6 +135,10 @@ function get_uuid( callback ) {
 
 function get_guid( callback ) {
 	_admin_call( "guid", undefined, callback );
+}
+
+function get_user( callback ) {
+	_admin_call( "user", undefined, callback );
 }
 
 function _admin_call( call, parameters, callback ) {
