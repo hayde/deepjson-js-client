@@ -26,6 +26,7 @@ exports.sha256 = _intern_hash256;
  * admin exports
  */
 exports.keys = keys;
+exports.altered_keys = altered_keys;
 exports.metadata = metadata;
 exports.location = location;
 exports.time = get_system_time;
@@ -115,6 +116,18 @@ function init( base_url ) {
  */
 function keys( regular_expression, callback ) {
 	_admin_call( "keys", regular_expression, callback );
+}
+
+//  timestamp is in "yyyy-MM-dd'T'HH:mm:ss"
+function altered_keys( regular_expression, yyyy_MM_dd, hh_MM_ss, callback ) {
+    var url = "/cmd/" + regular_expression;
+	if( yyyy_MM_dd !== undefined ) {
+		url += "?" + encodeURI( yyyy_MM_dd );	
+	}
+    if( hh_MM_ss !== undefined) {
+        url += "&" + encodeURI(hh_MM_ss); 
+    }
+	http_call( url, "GET", undefined, callback );
 }
 
 function metadata( key, callback ) {
