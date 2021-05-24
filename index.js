@@ -120,14 +120,17 @@ function keys( regular_expression, callback ) {
 
 //  timestamp is in "yyyy-MM-dd'T'HH:mm:ss"
 function altered_keys( regular_expression, yyyy_MM_dd, hh_MM_ss, callback ) {
-    var url = "/cmd/" + regular_expression;
+    var parameter = encodeURI(regular_expression); 
+
 	if( yyyy_MM_dd !== undefined ) {
-		url += "?" + encodeURI( yyyy_MM_dd );	
+		parameter += "&" +  encodeURI( yyyy_MM_dd );	
 	}
     if( hh_MM_ss !== undefined) {
-        url += "&" + encodeURI(hh_MM_ss); 
+        parameter += "&" + encodeURI(hh_MM_ss); 
     }
-	http_call( url, "GET", undefined, callback );
+	
+
+    _admin_call("altered_keys", parameter, callback)
 }
 
 function metadata( key, callback ) {
