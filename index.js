@@ -118,19 +118,10 @@ function keys( regular_expression, callback ) {
 	_admin_call( "keys", regular_expression, callback );
 }
 
-//  timestamp is in "yyyy-MM-dd'T'HH:mm:ss"
-function altered_keys( regular_expression, yyyy_MM_dd, hh_MM_ss, callback ) {
-    var parameter = encodeURI(regular_expression); 
-
-	if( yyyy_MM_dd !== undefined ) {
-		parameter += "&" +  encodeURI( yyyy_MM_dd );	
-	}
-    if( hh_MM_ss !== undefined) {
-        parameter += "&" + encodeURI(hh_MM_ss); 
-    }
-	
-
-    _admin_call("altered_keys", parameter, callback)
+//  2021-05-21      00:00:00
+function altered_keys( regular_expression, timestamp, callback ) {
+    var parameters = regular_expression + "&" + timestamp; 
+    _admin_call("altered_keys", parameters, callback)
 }
 
 function metadata( key, callback ) {
